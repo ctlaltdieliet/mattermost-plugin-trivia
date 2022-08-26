@@ -1,28 +1,46 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
-	"sync"
-
+	pluginapi "github.com/mattermost/mattermost-plugin-api"
+	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
+	"github.com/pkg/errors"
 )
 
-// Plugin implements the interface expected by the Mattermost server to communicate between the server and plugin processes.
+const (
+	botUsername    = "triviabot"
+	botDisplayName = "Triva Bot"
+	botDescription = "A bot account created by the Trivia Plugin."
+)
+
+// Plugin represents the trivia bot plugin
 type Plugin struct {
 	plugin.MattermostPlugin
 
-	// configurationLock synchronizes access to the configuration.
-	configurationLock sync.RWMutex
-
-	// configuration is the active plugin configuration. Consult getConfiguration and
-	// setConfiguration for usage.
-	configuration *configuration
+	client *pluginapi.Client
+	// botUserID of the created bot account.
+	botUserID string
 }
 
-// ServeHTTP demonstrates a plugin that handles HTTP requests by greeting the world.
-func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "Hello, world!")
-}
+// OnActivate ensure the bot account exists
+func (p *Plugin) OnActivate() error {
+	p.client = pluginapi.NewClient(p.API, p.Driver)
 
-// See https://developers.mattermost.com/extend/plugins/server/reference/
+	bot := &model.Bot{
+		Username:    botUsername,
+		DisplayName: botDisplayName,
+		Description: botDescription,
+	}
+	botUserID, appErr := p.client.Bot.EnsureBot(bot)
+	if appErr != nil {
+		return errors.Wrap(appErr, "failed to ensure bot user")
+	}
+	p.botUserID = botUserID
+
+	err := p.API.RegisterCommand(getCommand())
+	if err != nil {
+		return errors.Wrap(err, "failed to register command")
+	}
+
+	return nil
+}
